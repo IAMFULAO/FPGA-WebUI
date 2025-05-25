@@ -39,8 +39,20 @@
         </el-radio-group>
       </el-form-item>
 
+      <!-- 评估任务选择 -->
+      <el-form-item label="4. 选择评估任务" v-if="selectedEvalMethod && selectedEvalTarget !== 'none'">
+        <el-checkbox-group v-model="selectedEvalTasks">
+          <el-checkbox
+              v-for="task in getAvailableTasks()"
+              :key="task.value"
+              :label="task.value">
+            {{ task.label }}
+          </el-checkbox>
+        </el-checkbox-group>
+      </el-form-item>
+
       <!-- 评分对象 -->
-      <el-form-item label="4. 选择评分对象">
+      <el-form-item label="5. 选择评分对象">
         <el-radio-group v-model="selectedEvalTarget">
           <el-radio label="origin">原模型</el-radio>
           <el-radio label="quant">量化模型</el-radio>
@@ -127,10 +139,32 @@ export default {
         { value: 'int4', label: 'INT4（仅支持）', precisionValue: 4 },
         { value: 'int8', label: 'INT8', precisionValue: 8 }
       ],
+      evalPlusTasks: [
+        { value: 'humaneval', label: 'HumanEval' },
+        { value: 'mbpp', label: 'MBPP' }
+      ],
+      imEvalHarnessTasks: [
+        { value: 'arc_easy', label: 'ARC Easy' },
+        { value: 'arc_challenge', label: 'ARC Challenge' },
+        { value: 'gsm8k_cot', label: 'GSM8K CoT' },
+        { value: 'gsm8k_platinum_cot', label: 'GSM8K Platinum CoT' },
+        { value: 'hellaswag', label: 'HellaSwag' },
+        { value: 'mmlu', label: 'MMLU' },
+        { value: 'gpqa', label: 'GPQA' },
+        { value: 'boolq', label: 'BoolQ' },
+        { value: 'openbookqa', label: 'OpenBookQA' }
+      ],
+      selectedEvalTasks: [],
       apiUrl: 'http://10.20.108.87:7678/api'
     }
   },
   methods: {
+    getAvailableTasks() {
+      return this.selectedEvalMethod === 'evalPlus'
+          ? this.evalPlusTasks
+          : this.imEvalHarnessTasks;
+    },
+
     async startProgressPolling() {
       // 清除已有轮询
       if (this.progressPollingInterval) {
@@ -200,22 +234,32 @@ export default {
       this.isDeploying = true;
       this.deployStatus = [];
 
-      try {
-        const model = this.getCurrentModel();
+      const model = this.getCurrentModel();
 
-        // 直接启动评估，跳过量化相关步骤
-        if (this.selectedEvalTarget !== 'none') {
-          this.deployStatus.push('1. 开始评估流程...');
-          await this.startEvaluation(this.selectedEvalTarget === 'quant' ? 'quant' : 'origin');
-        } else {
-          this.$message.warning('未选择评估对象');
+      this.deployStatus.push('✅ 跳过量化流程，进入评估测试');
+
+      try {
+        if (this.selectedEvalTarget === 'origin' || this.selectedEvalTarget === 'both') {
+          this.deployStatus.push('▶️ 开始原模型评估...');
+          this.startEvaluation('origin');
         }
 
+        if (this.selectedEvalTarget === 'quant' || this.selectedEvalTarget === 'both') {
+          this.deployStatus.push('▶️ 开始量化模型评估（注意：未执行实际量化）...');
+          this.startEvaluation('quant');
+        }
+
+        this.deployStatus.push('✅ 模拟部署完成（未执行量化）');
+        this.$emit('deploy-success', {
+          name: model.label,
+          precision: this.getPrecisionName(this.selectedQuantPrecision)
+        });
+
       } catch (error) {
-        console.error('评估失败:', error);
-        const errorMsg = error.response?.data?.message || error.message;
-        this.deployStatus.push(`❌ 评估失败: ${errorMsg}`);
-        this.$message.error(`评估失败: ${errorMsg}`);
+        console.error('模拟部署失败:', error);
+        const errorMsg = error.message || '未知错误';
+        this.deployStatus.push(`❌ 模拟部署失败: ${errorMsg}`);
+        this.$message.error(`部署失败: ${errorMsg}`);
       } finally {
         this.isDeploying = false;
       }
@@ -232,8 +276,9 @@ export default {
         const response = await axios.post(`${this.apiUrl}`, {
           model_name: model.label,
           eval_method: method,
-          start_evaluation: true, // 添加评估标志
-          is_quantized: target !== 'origin' // 量化判断
+          eval_tasks: this.selectedEvalTasks, // 新增
+          start_evaluation: true,
+          is_quantized: target !== 'origin'
         }, {
           headers: {
             'Authorization': 'Basic ' + btoa(`${this.authInfo.username}:${this.authInfo.password}`)
@@ -289,22 +334,59 @@ export default {
     },
 
     async cancelDeploy() {
-      if (!this.isDeploying) return;
-
-      this.deployStatus.push('🔴 正在取消评估流程...');
-
       try {
-        const cancelResp = await axios.post(`${this.apiUrl}/cancel_eval`, {}, {
-          headers: {
-            'Authorization': 'Basic ' + btoa(`${this.authInfo.username}:${this.authInfo.password}`)
-          }
-        });
+        if (!this.isDeploying) return;
 
-        cancelResp.data.success
-            ? this.deployStatus.push('✅ 已取消评估进程')
-            : this.deployStatus.push(`⚠️ 无法取消评估: ${cancelResp.data.message}`);
+        // 1. 停止前端轮询（包括量化进度）
+        if (this.progressPollingInterval) {
+          clearInterval(this.progressPollingInterval);
+        }
+
+        this.deployStatus.push('🔴 正在取消部署流程...');
+
+        // 2. 取消量化进程
+        try {
+          const quantCancelResp = await axios.post(`${this.apiUrl}/cancel_quant`, {}, {
+            headers: {
+              'Authorization': 'Basic ' + btoa(`${this.authInfo.username}:${this.authInfo.password}`)
+            }
+          });
+
+          if (quantCancelResp.data.success) {
+            this.deployStatus.push('✅ 已成功取消量化进程');
+          } else {
+            this.deployStatus.push('⚠️ 取消量化失败: ' + quantCancelResp.data.message);
+          }
+        } catch (e) {
+          this.deployStatus.push('⚠️ 取消量化时发生异常: ' + (e.message || '未知错误'));
+        }
+
+        // 3. 取消评分进程（无论是否启动）
+        try {
+          const cancelResp = await axios.post(`${this.apiUrl}/cancel_eval`, {}, {
+            headers: {
+              'Authorization': 'Basic ' + btoa(`${this.authInfo.username}:${this.authInfo.password}`)
+            }
+          });
+
+          if (cancelResp.data.success) {
+            this.deployStatus.push(`✅ 已取消评估进程`);
+          } else {
+            this.deployStatus.push(`⚠️ 无法取消评估: ${cancelResp.data.message}`);
+          }
+        } catch (error) {
+          this.deployStatus.push(`⚠️ 取消评分失败: ${error.message}`);
+        }
+
+        // 4. 状态重置
+        this.isDeploying = false;
+        this.$message.warning('部署流程和评分流程已中断');
+
       } catch (error) {
-        this.deployStatus.push(`⚠️ 取消评分失败: ${error.message}`);
+        console.error('取消部署失败:', error);
+        const errorMsg = error.response?.data?.message || error.message;
+        this.deployStatus.push(`❌ 取消失败: ${errorMsg}`);
+        this.$message.error(`取消失败: ${errorMsg}`);
       } finally {
         this.isDeploying = false;
       }
@@ -360,6 +442,17 @@ export default {
     getPrecisionName(value) {
       const precision = this.precisions.find(p => p.value === value);
       return precision ? precision.label.toUpperCase() : '';
+    }
+  },
+
+  watch: {
+    selectedEvalMethod() {
+      this.selectedEvalTasks = []; // 切换评估框架时清空已选任务
+    },
+    selectedEvalTarget(newVal) {
+      if (newVal === 'none') {
+        this.selectedEvalTasks = []; // 选择"不评分"时清空已选任务
+      }
     }
   },
 
