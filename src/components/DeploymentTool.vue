@@ -129,6 +129,7 @@ export default {
       selectedEvalTarget: 'none',
       quantLogs: [],
       evalLogs:[],
+      dataLogs:[],
       models: [
         { value: 'qwen2', label: 'Qwen2-7B-Instruct', icon: modelQwen },
         { value: 'qwen2.5', label: 'Qwen2.5-7B-Instruct', icon: modelQwen },
@@ -336,6 +337,153 @@ export default {
       }, 3000);
     },
 
+    async startDeploymentPolling() {
+      let failCount = 0;
+      const MAX_FAILS = 5;
+
+      const interval = setInterval(async () => {
+        try {
+          const response = await axios.get(`${this.apiUrl}/deploy_progress`, {
+            headers: {
+              'Authorization': 'Basic ' + btoa(`${this.authInfo.username}:${this.authInfo.password}`)
+            }
+          });
+
+          if (response.data.success) {
+            failCount = 0;
+            const progressLines = response.data.logs || [];
+            this.deployLogs.push(...progressLines);
+            this.$emit('deploy-log', progressLines);
+
+            const hasError = this.deployLogs.some(line =>
+                line.includes('[ERROR]') ||
+                line.includes('失败') ||
+                line.includes('异常') ||
+                line.includes('Traceback')
+            );
+
+            const hasCompleted = this.deployLogs.some(line =>
+                line.includes('完成') ||
+                line.toLowerCase().includes('deployment finished') ||
+                line.toLowerCase().includes('done')
+            );
+
+            if (hasError) {
+              clearInterval(interval);
+              this.deployStatus.push(`❌ 模型部署失败，请检查日志`);
+              return;
+            }
+
+            if (!response.data.is_running && !hasCompleted) {
+              clearInterval(interval);
+              this.deployStatus.push(`❌ 模型部署中断但未检测到“完成”关键词，可能失败`);
+              return;
+            }
+
+            if (hasCompleted) {
+              clearInterval(interval);
+              this.deployStatus.push(`✅ 模型部署完成`);
+            }
+          }
+        } catch (error) {
+          const isAxiosError = error.isAxiosError;
+          const errMsg = error?.message || '';
+          const isIgnorable = errMsg.includes('ERR_EMPTY_RESPONSE') ||
+              (isAxiosError && !error.response);
+
+          if (isIgnorable) {
+            failCount++;
+            console.warn(`⚠️ 部署轮询失败（可忽略）: ${errMsg}，当前失败次数: ${failCount}`);
+
+            if (failCount >= MAX_FAILS) {
+              clearInterval(interval);
+              this.deployStatus.push(`❌ 连续多次无法获取部署进度，任务可能失败`);
+              this.$message.error('部署进度查询连续失败，已中止');
+            }
+            return;
+          }
+
+          clearInterval(interval);
+          this.deployStatus.push(`❌ 部署进度获取失败: ${errMsg}`);
+          this.$message.error('部署进度查询失败');
+        }
+      }, 3000);
+    },
+
+    async startCompilationPolling() {
+      let failCount = 0;
+      const MAX_FAILS = 5;
+
+      const interval = setInterval(async () => {
+        try {
+          const response = await axios.get(`${this.apiUrl}/compile_progress`, {
+            headers: {
+              'Authorization': 'Basic ' + btoa(`${this.authInfo.username}:${this.authInfo.password}`)
+            }
+          });
+
+          if (response.data.success) {
+            failCount = 0;
+            const progressLines = response.data.progress || [];
+            this.compileLogs.push(...progressLines);
+            this.$emit('compile-log', progressLines);  // 向父组件分发日志事件
+
+            const hasError = this.compileLogs.some(line =>
+                line.includes('[ERROR]') ||
+                line.includes('失败') ||
+                line.includes('异常') ||
+                line.includes('Traceback')
+            );
+
+            const hasCompleted = this.compileLogs.some(line =>
+                line.includes('完成') ||
+                line.toLowerCase().includes('compile finished') ||
+                line.toLowerCase().includes('compilation complete') ||
+                line.toLowerCase().includes('done')
+            );
+
+            if (hasError) {
+              clearInterval(interval);
+              this.deployStatus.push(`❌ 模型编译失败，请检查日志`);
+              return;
+            }
+
+            if (!response.data.is_running && !hasCompleted) {
+              clearInterval(interval);
+              this.deployStatus.push(`❌ 模型编译中断但未检测到“完成”关键词，可能失败`);
+              return;
+            }
+
+            if (hasCompleted) {
+              clearInterval(interval);
+              this.deployStatus.push(`✅ 模型编译完成`);
+            }
+          }
+        } catch (error) {
+          const isAxiosError = error.isAxiosError;
+          const errMsg = error?.message || '';
+          const isIgnorable = errMsg.includes('ERR_EMPTY_RESPONSE') ||
+              (isAxiosError && !error.response);
+
+          if (isIgnorable) {
+            failCount++;
+            console.warn(`⚠️ 编译轮询失败（可忽略）: ${errMsg}，当前失败次数: ${failCount}`);
+
+            if (failCount >= MAX_FAILS) {
+              clearInterval(interval);
+              this.deployStatus.push(`❌ 连续多次无法获取编译进度，任务可能失败`);
+              this.$message.error('编译进度查询连续失败，已中止');
+            }
+            return;
+          }
+
+          clearInterval(interval);
+          this.deployStatus.push(`❌ 编译进度获取失败: ${errMsg}`);
+          this.$message.error('编译进度查询失败');
+        }
+      }, 3000);
+    },
+
     async startDeploy() {
       if (!this.selectedModel) {
         this.$message.error('请先选择模型');
@@ -344,10 +492,12 @@ export default {
 
       this.quantLogs = [];
       this.evalLogs = [];
+      this.deployLogs = [];
       this.deployStatus = [];
 
       this.$emit('quant-log', []);
       this.$emit('eval-log', []);
+      this.$emit('deploy-log', []);
 
       this.isDeploying = true;
 
@@ -393,11 +543,11 @@ export default {
           throw new Error(quantResponse.message || '量化启动失败');
         }
 
+        const hasFinished = this.deployStatus.some(line => line.includes('✅ 量化完成'));
+
         if (this.selectedEvalTarget === 'quant' || this.selectedEvalTarget === 'both') {
           this.deployStatus.push('等待量化完成后对量化模型进行评分...');
-
           const checkQuantCompletion = setInterval(() => {
-            const hasFinished = this.deployStatus.some(line => line.includes('✅ 量化完成'));
             if (hasFinished) {
               clearInterval(checkQuantCompletion);
               this.startEvaluation('quant');
@@ -405,10 +555,10 @@ export default {
           }, 3000);
         }
 
-        // 3. 生成FPGA代码
-        this.deployStatus.push('3. 生成 FPGA 代码...');
-        await this.delay(1500);
-        this.deployStatus.push('FPGA 代码生成完成');
+        if (hasFinished) {
+          this.startDeployment();
+          this.startCompilation();
+        }
 
         // 4. 完成
         this.deployStatus.push('✅ 部署成功！');
@@ -478,6 +628,64 @@ export default {
       }
     },
 
+    async startDeployment() {
+      const model = this.getCurrentModel();
+
+      this.deployLogs = [];
+      this.deployStatus.push(`开始部署模型 ${model.label} ...`);
+
+      try {
+        const response = await axios.post(`${this.apiUrl}`, {
+          model_name: model.label,
+          start_deployment: true
+        }, {
+          headers: {
+            'Authorization': 'Basic ' + btoa(`${this.authInfo.username}:${this.authInfo.password}`)
+          }
+        });
+
+        if (response.data.success) {
+          this.deployStatus.push(`✅ 模型 ${model.label} 部署任务已启动 (PID: ${response.data.pid})`);
+          this.startDeploymentPolling();  // 轮询日志或状态
+        } else {
+          throw new Error(response.data.message || '部署启动失败');
+        }
+      } catch (error) {
+        console.error('部署启动失败', error);
+        const errorMsg = error.response?.data?.message || error.message;
+        this.deployStatus.push(`❌ 模型 ${model.label} 部署启动失败: ${errorMsg}`);
+      }
+    },
+
+    async startCompilation() {
+      const model = this.getCurrentModel();
+      this.compileLogs = [];
+      this.deployStatus.push(`开始对模型 ${model.label} 进行编译...`);
+
+      try {
+        const response = await axios.post(`${this.apiUrl}`, {
+          model_name: model.label,
+          start_compilation: true
+        }, {
+          headers: {
+            'Authorization': 'Basic ' + btoa(`${this.authInfo.username}:${this.authInfo.password}`)
+          }
+        });
+
+        if (response.data.success) {
+          this.deployStatus.push(`✅ 模型 ${model.label} 编译任务已启动`);
+          this.startCompilationPolling();  // 轮询编译日志
+        } else {
+          throw new Error(response.data.message || '编译启动失败');
+        }
+      } catch (error) {
+        console.error("编译启动失败", error);
+        const errorMsg = error.response?.data?.message || error.message;
+        this.deployStatus.push(`❌ 编译启动失败: ${errorMsg}`);
+      }
+    },
+
+
     async cancelDeploy() {
       try {
         if (!this.isDeploying) return;
@@ -521,6 +729,43 @@ export default {
           }
         } catch (error) {
           this.deployStatus.push(`⚠️ 取消评分失败: ${error.message}`);
+        }
+
+        // 取消部署
+        try {
+          const cancelResp = await axios.post(`${this.apiUrl}/cancel_deployment`, {}, {
+            headers: {
+              'Authorization': 'Basic ' + btoa(`${this.authInfo.username}:${this.authInfo.password}`)
+            }
+          });
+
+          if (cancelResp.data.success) {
+            this.deployStatus.push(`✅ 已取消部署进程`);
+            this.$message.success('部署进程已成功取消');
+          } else {
+            this.deployStatus.push(`⚠️ 无法取消部署: ${cancelResp.data.message}`);
+            this.$message.warning(cancelResp.data.message || '无法取消部署进程');
+          }
+        } catch (error) {
+          const errMsg = error?.response?.data?.message || error.message;
+          this.deployStatus.push(`❌ 取消部署失败: ${errMsg}`);
+          this.$message.error('取消部署失败');
+        }
+
+        try {
+          const cancelResp = await axios.post(`${this.apiUrl}/cancel_compile`, {}, {
+            headers: {
+              'Authorization': 'Basic ' + btoa(`${this.authInfo.username}:${this.authInfo.password}`)
+            }
+          });
+
+          if (cancelResp.data.success) {
+            this.deployStatus.push(`✅ 已取消编译进程`);
+          } else {
+            this.deployStatus.push(`⚠️ 无法取消编译: ${cancelResp.data.message}`);
+          }
+        } catch (error) {
+          this.deployStatus.push(`⚠️ 取消编译失败: ${error.message}`);
         }
 
         // 4. 状态重置

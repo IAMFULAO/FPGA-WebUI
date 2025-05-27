@@ -8,12 +8,16 @@
             @deploy-success="handleDeploySuccess"
             @quant-log="handleQuantLog"
             @eval-log="handleEvalLog"
+            @deploy-log="handleDeployLog"
+            @compile-log="handleCompileLog"
             :deployed-models="deployedModels"
             :auth-info="authInfo" />
 
         <div class="log-displays">
           <QuantLogDisplay :logs="quantLogs" />
           <EvalLogDisplay :logs="evalLogs" />
+          <DeployLogDisplay :logs="deployLogs" />
+          <CompileLogDisplay :logs="compileLogs" />
         </div>
       </div>
 
@@ -37,6 +41,8 @@ import MyImage from './components/MyImage.vue'
 import DeployedModels from './components/DeployedModels.vue'
 import QuantLogDisplay from './components/QuantLogDisplay.vue'
 import EvalLogDisplay from './components/EvalLogDisplay.vue'
+import DeployLogDisplay from './components/DeployLogDisplay.vue'
+import CompileLogDisplay from './components/CompileLogDisplay.vue'
 
 export default {
   name: 'App',
@@ -46,7 +52,9 @@ export default {
     MyImage,
     DeployedModels,
     QuantLogDisplay,
-    EvalLogDisplay
+    EvalLogDisplay,
+    DeployLogDisplay,
+    CompileLogDisplay
   },
   data() {
     return {
@@ -54,7 +62,9 @@ export default {
       authInfo: {},
       deployedModels: [],
       quantLogs: [],
-      evalLogs: []
+      evalLogs: [],
+      deployLogs: [],
+      compileLogs: []
     }
   },
   methods: {
@@ -62,7 +72,7 @@ export default {
       this.authInfo = credentials
       this.isLoggedIn = true
     },
-
+    
     handleQuantLog(newLogs) {
       console.log('收到量化日志:', newLogs)
       const lastLength = this.quantLogs.length
@@ -85,10 +95,33 @@ export default {
       }
     },
 
+    handleDeployLog(newLogs) {
+      console.log('收到部署日志:', newLogs)
+      const lastLength = this.deployLogs.length
+      const overlap = newLogs.slice(0, lastLength).every((line, i) => line === this.deployLogs[i])
+      if (overlap) {
+        this.deployLogs = [...this.deployLogs, ...newLogs.slice(lastLength)]
+      } else {
+        this.deployLogs = [...new Set([...this.deployLogs, ...newLogs])]
+      }
+    },
+
+    handleCompileLog(newLogs) {
+      const lastLength = this.compileLogs.length
+      const overlap = newLogs.slice(0, lastLength).every((line, i) => line === this.compileLogs[i])
+      if (overlap) {
+        this.compileLogs = [...this.compileLogs, ...newLogs.slice(lastLength)]
+      } else {
+        this.compileLogs = [...new Set([...this.compileLogs, ...newLogs])]
+      }
+    },
+
     handleDeploySuccess(modelData) {
       try {
         this.quantLogs = []
         this.evalLogs = []
+        this.deployLogs = []
+        this.compileLogs = []
 
         this.deployedModels.push({
           name: modelData.name,
