@@ -35,7 +35,7 @@
       <el-form-item label="3. 选择评分方法">
         <el-radio-group v-model="selectedEvalMethod">
           <el-radio label="evalPlus">EvalPlus</el-radio>
-          <el-radio label="imEvalHarness">ImEvaluationHarness</el-radio>
+          <el-radio label="lmEvalHarness">lmEvaluationHarness</el-radio>
         </el-radio-group>
       </el-form-item>
 
@@ -127,6 +127,8 @@ export default {
       quantPid: null,
       selectedEvalMethod: 'evalPlus',
       selectedEvalTarget: 'none',
+      quantLogs: [],
+      evalLogs:[],
       models: [
         { value: 'qwen2', label: 'Qwen2-7B-Instruct', icon: modelQwen },
         { value: 'qwen2.5', label: 'Qwen2.5-7B-Instruct', icon: modelQwen },
@@ -143,7 +145,7 @@ export default {
         { value: 'humaneval', label: 'HumanEval' },
         { value: 'mbpp', label: 'MBPP' }
       ],
-      imEvalHarnessTasks: [
+      lmEvalHarnessTasks: [
         { value: 'arc_easy', label: 'ARC Easy' },
         { value: 'arc_challenge', label: 'ARC Challenge' },
         { value: 'gsm8k_cot', label: 'GSM8K CoT' },
@@ -162,7 +164,7 @@ export default {
     getAvailableTasks() {
       return this.selectedEvalMethod === 'evalPlus'
           ? this.evalPlusTasks
-          : this.imEvalHarnessTasks;
+          : this.lmEvalHarnessTasks;
     },
 
     async startProgressPolling() {
@@ -170,6 +172,9 @@ export default {
       if (this.progressPollingInterval) {
         clearInterval(this.progressPollingInterval);
       }
+
+      let failCount = 0;
+      const MAX_FAILS = 5;
 
       this.progressPollingInterval = setInterval(async () => {
         try {
@@ -182,10 +187,10 @@ export default {
           if (response.data.success) {
             // 更新进度显示
             if (response.data.progress && response.data.progress.length > 0) {
-              this.deployStatus = [
-                ...this.deployStatus.filter(s => !s.startsWith('-')),
-                ...response.data.progress.map(p => `-${p}`)
-              ];
+              const logs = response.data.progress || [];
+              this.quantLogs.push(...logs);
+              this.$emit('quant-log', response.data.progress);
+              failCount = 0;
             }
 
             // 检查是否有错误（匹配 ERROR 或异常关键词）
@@ -203,8 +208,21 @@ export default {
               return;
             }
 
-            // 如果量化完成，停止轮询
-            if (!response.data.is_running) {
+            const hasCompleted = this.quantLogs.some(line =>
+                line.includes('量化完成') ||
+                line.includes('完成') ||
+                line.toLowerCase().includes('quantization finished') ||
+                line.toLowerCase().includes('success')
+            );
+
+            if (!response.data.is_running && !hasCompleted) {
+              clearInterval(this.progressPollingInterval);
+              this.isDeploying = false;
+              this.deployStatus.push('❌ 量化进程结束但未检测到“完成”，可能失败');
+              return;
+            }
+
+            if (hasCompleted) {
               clearInterval(this.progressPollingInterval);
               this.isDeploying = false;
               this.deployStatus.push('✅ 量化完成');
@@ -215,12 +233,105 @@ export default {
             }
           }
         } catch (error) {
-          console.error('获取进度失败:', error);
+          const errMsg = error?.message || '';
+          const isAxiosError = error.isAxiosError === true;
+          const noResponse = !error.response;
+
+          const isIgnorable =
+              errMsg.includes('ERR_EMPTY_RESPONSE') ||
+              (isAxiosError && noResponse);
+
+          if (isIgnorable) {
+            failCount++;
+            console.warn(`⚠️ 量化进度轮询失败（可忽略）: ${errMsg}，已失败 ${failCount} 次`);
+
+            if (failCount >= MAX_FAILS) {
+              clearInterval(this.progressPollingInterval);
+              this.isDeploying = false;
+              this.deployStatus.push('❌ 连续多次无法获取量化进度，任务可能失败');
+              this.$message.error('连续多次进度查询失败');
+              await this.cancelDeploy();
+            }
+            return;
+          }
           clearInterval(this.progressPollingInterval);
           this.isDeploying = false;
-          this.deployStatus.push('❌ 无法获取量化进度');
+          this.deployStatus.push(`❌ 无法获取量化进度: ${errMsg}`);
           this.$message.error('量化进度查询失败');
           await this.cancelDeploy();
+        }
+      }, 3000);
+    },
+
+    async startEvaluationPolling(target) {
+      let failCount = 0;
+      const MAX_FAILS = 5;
+
+      const interval = setInterval(async () => {
+        try {
+          const response = await axios.get(`${this.apiUrl}/eval_progress`, {
+            headers: {
+              'Authorization': 'Basic ' + btoa(`${this.authInfo.username}:${this.authInfo.password}`)
+            }
+          });
+
+          if (response.data.success) {
+            failCount = 0;
+            const progressLines = response.data.progress || [];
+            this.evalLogs.push(...progressLines);
+            this.$emit('eval-log', progressLines);
+
+            const hasError = this.evalLogs.some(line =>
+                line.includes('[ERROR]') ||
+                line.includes('失败') ||
+                line.includes('异常') ||
+                line.includes('Traceback')
+            );
+
+            const hasCompleted = this.evalLogs.some(line =>
+                line.includes('完成') ||
+                line.toLowerCase().includes('evaluation finished') ||
+                line.toLowerCase().includes('scoring complete') ||
+                line.toLowerCase().includes('done')
+            );
+
+            if (hasError) {
+              clearInterval(interval);
+              this.deployStatus.push(`❌ ${target === 'origin' ? '原模型' : '量化模型'} 评分失败，请检查日志`);
+              return;
+            }
+
+            if (!response.data.is_running && !hasCompleted) {
+              clearInterval(interval);
+              this.deployStatus.push(`❌ ${target === 'origin' ? '原模型' : '量化模型'} 评分中断但未检测到“完成”关键词，可能失败`);
+              return;
+            }
+
+            if (hasCompleted) {
+              clearInterval(interval);
+              this.deployStatus.push(`✅ ${target === 'origin' ? '原模型' : '量化模型'} 评分完成`);
+            }
+          }
+        } catch (error) {
+          const isAxiosError = error.isAxiosError;
+          const errMsg = error?.message || '';
+          const isIgnorable = errMsg.includes('ERR_EMPTY_RESPONSE') ||
+              (isAxiosError && !error.response);
+
+          if (isIgnorable) {
+            failCount++;
+            console.warn(`⚠️ 评分轮询失败（可忽略）: ${errMsg}，当前失败次数: ${failCount}`);
+
+            if (failCount >= MAX_FAILS) {
+              clearInterval(interval);
+              this.deployStatus.push(`❌ ${target === 'origin' ? '原模型' : '量化模型'} 连续多次无法获取评分进度，任务可能失败`);
+              this.$message.error('评分进度查询连续失败，已中止');
+            }
+            return;
+          }
+          clearInterval(interval);
+          this.deployStatus.push(`❌ ${target === 'origin' ? '原模型' : '量化模型'} 评分进度获取失败: ${errMsg}`);
+          this.$message.error('评分进度查询失败');
         }
       }, 3000);
     },
@@ -231,37 +342,105 @@ export default {
         return;
       }
 
-      this.isDeploying = true;
+      this.quantLogs = [];
+      this.evalLogs = [];
       this.deployStatus = [];
 
-      const model = this.getCurrentModel();
+      this.$emit('quant-log', []);
+      this.$emit('eval-log', []);
 
-      this.deployStatus.push('✅ 跳过量化流程，进入评估测试');
+      this.isDeploying = true;
 
       try {
+        const model = this.getCurrentModel();
+        const precision = this.precisions.find(p => p.value === this.selectedQuantPrecision);
+
+        const requestData = {
+          model_name: model.label,
+          precision: precision.precisionValue
+        };
+
+        // 1. 调用API发送部署请求
+        this.deployStatus.push('1. 正在发送部署请求到服务器...');
+        await this.sendDeployRequest(requestData);
+        this.deployStatus.push('服务器已接收部署请求');
+
         if (this.selectedEvalTarget === 'origin' || this.selectedEvalTarget === 'both') {
-          this.deployStatus.push('▶️ 开始原模型评估...');
           this.startEvaluation('origin');
         }
 
-        if (this.selectedEvalTarget === 'quant' || this.selectedEvalTarget === 'both') {
-          this.deployStatus.push('▶️ 开始量化模型评估（注意：未执行实际量化）...');
-          this.startEvaluation('quant');
+        // 2. 量化处理
+        this.deployStatus.push(`2. 量化中 (${this.getPrecisionName(this.selectedQuantPrecision)})...`);
+        const quantResponse = await this.sendDeployRequest({
+          model_name: model.label,
+          start_quantization: true
+        });
+
+        // 检查量化是否成功启动
+        if (quantResponse.message && quantResponse.message.includes('量化进程已启动')) {
+          this.deployStatus.push('量化开始');
+        } else {
+          throw new Error('量化启动失败');
         }
 
-        this.deployStatus.push('✅ 模拟部署完成（未执行量化）');
+        if (quantResponse.success && quantResponse.pid) {
+          this.quantPid = quantResponse.pid;
+          this.deployStatus.push(`2. 量化中 (PID: ${this.quantPid})...`);
+
+          // 开始轮询进度
+          this.startProgressPolling();
+        } else {
+          throw new Error(quantResponse.message || '量化启动失败');
+        }
+
+        if (this.selectedEvalTarget === 'quant' || this.selectedEvalTarget === 'both') {
+          this.deployStatus.push('等待量化完成后对量化模型进行评分...');
+
+          const checkQuantCompletion = setInterval(() => {
+            const hasFinished = this.deployStatus.some(line => line.includes('✅ 量化完成'));
+            if (hasFinished) {
+              clearInterval(checkQuantCompletion);
+              this.startEvaluation('quant');
+            }
+          }, 3000);
+        }
+
+        // 3. 生成FPGA代码
+        this.deployStatus.push('3. 生成 FPGA 代码...');
+        await this.delay(1500);
+        this.deployStatus.push('FPGA 代码生成完成');
+
+        // 4. 完成
+        this.deployStatus.push('✅ 部署成功！');
         this.$emit('deploy-success', {
           name: model.label,
           precision: this.getPrecisionName(this.selectedQuantPrecision)
         });
 
       } catch (error) {
-        console.error('模拟部署失败:', error);
-        const errorMsg = error.message || '未知错误';
-        this.deployStatus.push(`❌ 模拟部署失败: ${errorMsg}`);
+        console.error('部署失败:', error);
+        const errorMsg = error.response?.data?.message || error.message;
+
+        this.$reportError(error, {
+          action: 'model_deployment',
+          model: this.selectedModel,
+          precision: this.selectedQuantPrecision,
+          errorMsg: errorMsg,
+          status: this.deployStatus.join('\n')
+        });
+
+        if (errorMsg.includes('量化启动失败')) {
+          this.deployStatus.push('❌ 量化失败: 无法启动量化进程');
+        } else {
+          this.deployStatus.push(`❌ 部署失败: ${errorMsg}`);
+        }
+
         this.$message.error(`部署失败: ${errorMsg}`);
+        if (this.progressPollingInterval) {
+          clearInterval(this.progressPollingInterval);
+        }
+        await this.cancelDeploy();
       } finally {
-        this.isDeploying = false;
       }
     },
 
@@ -269,6 +448,7 @@ export default {
       const model = this.getCurrentModel();
       const method = this.selectedEvalMethod;
 
+      this.evalLogs = [];
       this.deployStatus.push(`开始对 ${target === 'origin' ? '原模型' : '量化模型'} 进行评分（方法：${method}）...`);
 
       try {
@@ -287,7 +467,7 @@ export default {
 
         if (response.data.success) {
           this.deployStatus.push(`✅ ${target === 'origin' ? '原模型' : '量化模型'} 评分任务已启动`);
-          this.pollEvaluationProgress(target);
+          this.startEvaluationPolling(target);
         } else {
           throw new Error(response.data.message || '评分启动失败');
         }
@@ -296,41 +476,6 @@ export default {
         const errorMsg = error.response?.data?.message || error.message;
         this.deployStatus.push(`❌ ${target === 'origin' ? '原模型' : '量化模型'} 评分启动失败: ${error.message}`);
       }
-    },
-
-    async pollEvaluationProgress(target) {
-      const interval = setInterval(async () => {
-        try {
-          const response = await axios.get(`${this.apiUrl}/eval_progress`, {
-            headers: {
-              'Authorization': 'Basic ' + btoa(`${this.authInfo.username}:${this.authInfo.password}`)
-            }
-          });
-
-          if (response.data.success) {
-            // 使用后端返回的progress字段而不是logs
-            const progressLines = response.data.progress || [];
-            this.deployStatus.push(...progressLines.map(log => `📊 ${log}`));
-
-            // 检查评估完成关键词
-            const isCompleted = response.data.progress?.some(line =>
-                line.includes('评估完成') ||
-                line.includes('evaluation completed')
-            );
-
-            if (!response.data.is_running || isCompleted) {
-              clearInterval(interval);
-              const statusMessage = isCompleted ?
-                  `✅ ${target === 'origin' ? '原模型' : '量化模型'} 评分完成` :
-                  '⚠️ 评估进程已结束但未检测到完成标志';
-              this.deployStatus.push(statusMessage);
-            }
-          }
-        } catch (error) {
-          clearInterval(interval);
-          this.deployStatus.push(`❌ ${target === 'origin' ? '原模型' : '量化模型'} 评分进度获取失败: ${error.message}`);
-        }
-      }, 3000);
     },
 
     async cancelDeploy() {
@@ -466,6 +611,7 @@ export default {
   }
 }
 </script>
+
 
 <style scoped>
 

@@ -2,18 +2,29 @@
   <div id="app">
     <Login v-if="!isLoggedIn" @login-success="handleLoginSuccess" />
     <div v-else class="container">
-      <div class="dashboard">
+      <div class="top-section">
         <DeploymentTool
+            ref="deploymentTool"
             @deploy-success="handleDeploySuccess"
+            @quant-log="handleQuantLog"
+            @eval-log="handleEvalLog"
             :deployed-models="deployedModels"
             :auth-info="authInfo" />
+
+        <div class="log-displays">
+          <QuantLogDisplay :logs="quantLogs" />
+          <EvalLogDisplay :logs="evalLogs" />
+        </div>
+      </div>
+
+      <div class="bottom-section">
         <DeployedModels
             :models="deployedModels"
             @remove="removeModel"
             :auth-info="authInfo" />
-      </div>
-      <div class="image-section">
-        <MyImage />
+        <div class="image-section">
+          <MyImage />
+        </div>
       </div>
     </div>
   </div>
@@ -24,6 +35,8 @@ import Login from './components/Login.vue'
 import DeploymentTool from './components/DeploymentTool.vue'
 import MyImage from './components/MyImage.vue'
 import DeployedModels from './components/DeployedModels.vue'
+import QuantLogDisplay from './components/QuantLogDisplay.vue'
+import EvalLogDisplay from './components/EvalLogDisplay.vue'
 
 export default {
   name: 'App',
@@ -31,13 +44,17 @@ export default {
     Login,
     DeploymentTool,
     MyImage,
-    DeployedModels
+    DeployedModels,
+    QuantLogDisplay,
+    EvalLogDisplay
   },
   data() {
     return {
       isLoggedIn: false,
       authInfo: {},
-      deployedModels: []
+      deployedModels: [],
+      quantLogs: [],
+      evalLogs: []
     }
   },
   methods: {
@@ -45,8 +62,34 @@ export default {
       this.authInfo = credentials
       this.isLoggedIn = true
     },
+
+    handleQuantLog(newLogs) {
+      console.log('收到量化日志:', newLogs)
+      const lastLength = this.quantLogs.length
+      const overlap = newLogs.slice(0, lastLength).every((line, i) => line === this.quantLogs[i])
+      if (overlap) {
+        this.quantLogs = [...this.quantLogs, ...newLogs.slice(lastLength)]
+      } else {
+        this.quantLogs = [...new Set([...this.quantLogs, ...newLogs])]
+      }
+    },
+
+    handleEvalLog(newLogs) {
+      console.log('收到评估日志:', newLogs)
+      const lastLength = this.evalLogs.length
+      const overlap = newLogs.slice(0, lastLength).every((line, i) => line === this.evalLogs[i])
+      if (overlap) {
+        this.evalLogs = [...this.evalLogs, ...newLogs.slice(lastLength)]
+      } else {
+        this.evalLogs = [...new Set([...this.evalLogs, ...newLogs])]
+      }
+    },
+
     handleDeploySuccess(modelData) {
       try {
+        this.quantLogs = []
+        this.evalLogs = []
+
         this.deployedModels.push({
           name: modelData.name,
           precision: modelData.precision,
@@ -114,6 +157,26 @@ body {
   gap: 20px;
 }
 
+.top-section {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.log-displays {
+  flex: 1;
+  min-width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.bottom-section {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
 .dashboard {
   display: flex;
   gap: 20px;
@@ -122,15 +185,14 @@ body {
 
 .dashboard > *:first-child {
   flex: 2;
-  min-width: 800px; /* 设置最小宽度 */
+  min-width: 800px;
 }
 
 .dashboard > *:last-child {
   flex: 1;
-  min-width: 300px; /* 保持 DeployedModels 的最小宽度 */
+  min-width: 300px;
 }
 
-/*  MyImage 居中 */
 .image-section {
   display: flex;
   justify-content: center;
