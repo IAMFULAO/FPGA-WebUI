@@ -2,7 +2,7 @@
   <div class="login-container">
     <el-card class="login-card">
       <div slot="header" class="header">
-        <span>FPGA部署平台登录</span>
+        <span>FPGA Compiler Toolchain</span>
       </div>
       <el-form
           :model="loginForm"
@@ -57,8 +57,7 @@ export default {
           { min: 3, max: 20, message: '长度在3到20个字符', trigger: 'blur' }
         ],
         password: [
-          { required: true, message: '请输入密码', trigger: 'blur' },
-          { min: 6, max: 30, message: '长度在6到30个字符', trigger: 'blur' }
+          { required: true, message: '请输入密码', trigger: 'blur' }
         ]
       }
     }
@@ -111,12 +110,17 @@ export default {
   justify-content: center;
   align-items: center;
   height: 100vh;
-  background-color: #f5f7fa;
+  background: rgba(255, 255, 255, 0.95);
 }
 
 .login-card {
   width: 400px;
-  padding: 20px;
+  padding: 0;
+  border-radius: 8px;
+}
+
+.el-form {
+  margin-top: 20px;
 }
 
 .header {

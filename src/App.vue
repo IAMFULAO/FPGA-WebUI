@@ -3,7 +3,8 @@
     <Login v-if="!isLoggedIn" @login-success="handleLoginSuccess" />
     <div v-else class="container">
       <div class="top-section">
-        <DeploymentTool
+        <div class="deployment-wrapper">
+          <DeploymentTool
             ref="deploymentTool"
             @deploy-success="handleDeploySuccess"
             @quant-log="handleQuantLog"
@@ -12,6 +13,7 @@
             @compile-log="handleCompileLog"
             :deployed-models="deployedModels"
             :auth-info="authInfo" />
+        </div>
 
         <div class="log-displays">
           <QuantLogDisplay :logs="quantLogs" />
@@ -26,9 +28,6 @@
             :models="deployedModels"
             @remove="removeModel"
             :auth-info="authInfo" />
-        <div class="image-section">
-          <MyImage />
-        </div>
       </div>
     </div>
   </div>
@@ -37,7 +36,6 @@
 <script>
 import Login from './components/Login.vue'
 import DeploymentTool from './components/DeploymentTool.vue'
-import MyImage from './components/MyImage.vue'
 import DeployedModels from './components/DeployedModels.vue'
 import QuantLogDisplay from './components/QuantLogDisplay.vue'
 import EvalLogDisplay from './components/EvalLogDisplay.vue'
@@ -49,7 +47,6 @@ export default {
   components: {
     Login,
     DeploymentTool,
-    MyImage,
     DeployedModels,
     QuantLogDisplay,
     EvalLogDisplay,
@@ -75,6 +72,10 @@ export default {
     
     handleQuantLog(newLogs) {
       console.log('收到量化日志:', newLogs)
+      if (newLogs.length === 0) {
+        this.quantLogs = []
+        return
+      }
       const lastLength = this.quantLogs.length
       const overlap = newLogs.slice(0, lastLength).every((line, i) => line === this.quantLogs[i])
       if (overlap) {
@@ -86,6 +87,10 @@ export default {
 
     handleEvalLog(newLogs) {
       console.log('收到评估日志:', newLogs)
+      if (newLogs.length === 0) {
+        this.evalLogs = []
+        return
+      }
       const lastLength = this.evalLogs.length
       const overlap = newLogs.slice(0, lastLength).every((line, i) => line === this.evalLogs[i])
       if (overlap) {
@@ -97,6 +102,10 @@ export default {
 
     handleDeployLog(newLogs) {
       console.log('收到部署日志:', newLogs)
+      if (newLogs.length === 0) {
+        this.deployLogs = []
+        return
+      }
       const lastLength = this.deployLogs.length
       const overlap = newLogs.slice(0, lastLength).every((line, i) => line === this.deployLogs[i])
       if (overlap) {
@@ -108,6 +117,10 @@ export default {
 
     handleCompileLog(newLogs) {
       const lastLength = this.compileLogs.length
+      if (newLogs.length === 0) {
+        this.compileLogs = []
+        return
+      }
       const overlap = newLogs.slice(0, lastLength).every((line, i) => line === this.compileLogs[i])
       if (overlap) {
         this.compileLogs = [...this.compileLogs, ...newLogs.slice(lastLength)]
@@ -118,10 +131,10 @@ export default {
 
     handleDeploySuccess(modelData) {
       try {
-        this.quantLogs = []
-        this.evalLogs = []
-        this.deployLogs = []
-        this.compileLogs = []
+        this.handleQuantLog([]);
+        this.handleEvalLog([]);
+        this.handleDeployLog([]);
+        this.handleCompileLog([]);
 
         this.deployedModels.push({
           name: modelData.name,
@@ -158,7 +171,6 @@ export default {
     }
   },
   mounted() {
-    // 注册未处理的Promise rejection
     window._unhandledRejection = (event) => {
       this.$reportError(event.reason, {
         type: 'unhandled_rejection'
@@ -180,54 +192,68 @@ body {
   margin: 0;
   padding: 20px;
   background-color: #f5f7fa;
+  background-image: url('/background.jpg');
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  background-position: center center;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+#app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .container {
-  max-width: 95%;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+  flex: 1;
+  background: rgba(255, 255, 255, 0.95);
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 0 15px rgba(0,0,0,0.1);
 }
 
 .top-section {
   display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 20px;
-  flex-wrap: wrap;
+  width: 100%;
+}
+
+.top-section > .deployment-wrapper {
+  max-width: 700px;
+  width: 100%;
+  margin: 0 auto;
 }
 
 .log-displays {
-  flex: 1;
-  min-width: 300px;
   display: flex;
   flex-direction: column;
   gap: 20px;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+
+.log-displays > * {
+  max-width: 100%;
+  width: 100%;
 }
 
 .bottom-section {
   display: flex;
   gap: 20px;
   flex-wrap: wrap;
-}
-
-.dashboard {
-  display: flex;
-  gap: 20px;
-  flex-wrap: wrap;
-}
-
-.dashboard > *:first-child {
-  flex: 2;
-  min-width: 800px;
-}
-
-.dashboard > *:last-child {
-  flex: 1;
-  min-width: 300px;
-}
-
-.image-section {
-  display: flex;
   justify-content: center;
+  width: 100%;
+  margin-top: 40px;
 }
 </style>

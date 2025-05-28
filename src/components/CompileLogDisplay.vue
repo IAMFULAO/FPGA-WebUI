@@ -1,9 +1,12 @@
 <template>
   <el-alert
-      title="编译进度"
       type="info"
       :closable="false"
       class="status-alert">
+    <template #title>
+      <span class="custom-title">编译进度</span>
+    </template>
+
     <div class="status-scroll-container">
       <div class="status-text-container">
         <div v-for="(line, index) in logs" :key="'compile-' + index">{{ line }}</div>
@@ -26,12 +29,29 @@ export default {
 </script>
 
 <style scoped>
+.custom-title {
+  font-weight: bold;
+}
+
+.status-alert {
+  background-color:#f5f5f5;
+  border: 1px solid #000;
+  border-radius: 8px;
+  color: #000000;
+}
+
 .status-scroll-container {
   max-height: 200px;
   overflow-y: auto;
 }
+
 .status-text-container {
+  width: 770px;
+  max-height: 200px;
+  overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-word;
+  color: #2e2e2e;
+  line-height: 1.5;
 }
 </style>

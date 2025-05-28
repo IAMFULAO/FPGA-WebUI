@@ -5,103 +5,129 @@
       <span>大模型 FPGA 部署工具</span>
     </div>
 
-    <el-form label-position="top">
+    <el-collapse v-model="activeSections">
       <!-- 模型选择模块 -->
-      <el-form-item label="1. 选择模型">
-        <el-select v-model="selectedModel" placeholder="请选择模型">
-          <el-option
-              v-for="model in models"
-              :key="model.value"
-              :label="model.label"
-              :value="model.value">
-            <span style="float: left">{{ model.label }}</span>
-            <img :src="model.icon" class="option-icon">
-          </el-option>
-        </el-select>
-      </el-form-item>
+      <el-collapse-item title="选择模型" name="model">
+        <el-form-item>
+          <el-select v-model="selectedModel" placeholder="请选择模型">
+            <el-option
+                v-for="model in models"
+                :key="model.value"
+                :label="model.label"
+                :value="model.value">
+              <span style="float: left">{{ model.label }}</span>
+              <img :src="model.icon" class="option-icon">
+            </el-option>
+          </el-select>
+        </el-form-item>
+      </el-collapse-item>
 
-      <!-- 量化精度模块 -->
-      <el-form-item label="2. 选择量化精度">
-        <el-radio-group v-model="selectedQuantPrecision">
-          <el-radio v-for="precision in precisions"
-                    :label="precision.value"
-                    :key="precision.value">
-            {{ precision.label }}
-          </el-radio>
-        </el-radio-group>
-      </el-form-item>
+      <!-- 量化精度 -->
+      <el-collapse-item title="选择量化精度" name="quant">
+        <el-form-item>
+          <el-select v-model="selectedQuantPrecision" placeholder="请选择量化精度">
+            <el-option
+                v-for="precision in precisions"
+                :key="precision.value"
+                :label="precision.label"
+                :value="precision.value">
+              <span style="float: left">{{ precision.label }}</span>
+            </el-option>
+          </el-select>
+        </el-form-item>
+      </el-collapse-item>
+
 
       <!-- 评分方法 -->
-      <el-form-item label="3. 选择评分方法">
-        <el-radio-group v-model="selectedEvalMethod">
-          <el-radio label="evalPlus">EvalPlus</el-radio>
-          <el-radio label="lmEvalHarness">lmEvaluationHarness</el-radio>
-        </el-radio-group>
-      </el-form-item>
+      <el-collapse-item title="选择评分方法" name="eval" v-if="selectedEvalTarget !== 'none'">
+        <el-form-item>
+          <el-select v-model="selectedEvalMethod" placeholder="请选择评分方法">
+            <el-option
+                v-for="method in evalMethods"
+                :key="method.value"
+                :label="method.label"
+                :value="method.value">
+              <span style="float: left">{{ method.label }}</span>
+            </el-option>
+          </el-select>
+        </el-form-item>
+      </el-collapse-item>
 
-      <!-- 评估任务选择 -->
-      <el-form-item label="4. 选择评估任务" v-if="selectedEvalMethod && selectedEvalTarget !== 'none'">
-        <el-checkbox-group v-model="selectedEvalTasks">
-          <el-checkbox
-              v-for="task in getAvailableTasks()"
-              :key="task.value"
-              :label="task.value">
-            {{ task.label }}
-          </el-checkbox>
-        </el-checkbox-group>
-      </el-form-item>
+      <!-- 评估任务 -->
+      <el-collapse-item title="选择评估任务" name="task" v-if="selectedEvalMethod && selectedEvalTarget !== 'none'">
+        <el-form-item>
+          <el-select
+              v-model="selectedEvalTasks"
+              multiple
+              filterable
+              placeholder="请选择评估任务"
+              :collapse-tags="false"
+              :clearable="true"
+              style="width: 100%;">
+            <el-option
+                v-for="task in getAvailableTasks()"
+                :key="task.value"
+                :label="task.label"
+                :value="task.value">
+              <span style="float: left">{{ task.label }}</span>
+            </el-option>
+          </el-select>
+        </el-form-item>
+      </el-collapse-item>
 
       <!-- 评分对象 -->
-      <el-form-item label="5. 选择评分对象">
-        <el-radio-group v-model="selectedEvalTarget">
-          <el-radio label="origin">原模型</el-radio>
-          <el-radio label="quant">量化模型</el-radio>
-          <el-radio label="both">两个都评分</el-radio>
-          <el-radio label="none">不评分</el-radio>
-        </el-radio-group>
-      </el-form-item>
+      <el-collapse-item title="选择评分对象" name="target">
+        <el-form-item>
+          <el-select v-model="selectedEvalTarget" placeholder="请选择评分对象">
+            <el-option
+                v-for="target in evalTargets"
+                :key="target.value"
+                :label="target.label"
+                :value="target.value">
+              <span style="float: left">{{ target.label }}</span>
+            </el-option>
+          </el-select>
+        </el-form-item>
+      </el-collapse-item>
+    </el-collapse>
 
-      <!-- FPGA 部署模块 -->
-      <el-form-item class="deploy-section">
-        <div class="deploy-button-wrapper">
-          <el-button type="primary" @click="startDeploy" :loading="isDeploying">
-            <img src="../assets/deploy-icon.jpg" class="button-icon">
-            开始部署
-          </el-button>
+    <!-- FPGA 部署 -->
+    <el-form-item class="deploy-section">
+      <div class="deploy-button-wrapper">
+        <el-button type="primary" @click="startDeploy" :loading="isDeploying">
+          开始部署
+        </el-button>
 
-          <el-button
-              v-if="isDeploying"
-              @click="cancelDeploy"
-              style="margin-left: 10px;">
-            取消
-          </el-button>
-        </div>
+        <el-button
+            v-if="isDeploying"
+            @click="cancelDeploy"
+            style="margin-left: 10px;">
+          取消
+        </el-button>
+      </div>
 
-        <el-alert v-if="deployStatus.length > 0"
-                  :title="''"
-                  type="info"
-                  :closable="false"
-                  :show-icon="false"
-                  class="status-alert">
-
-          <div class="status-scroll-container">
-            <div class="status-text-container">
-              <div v-for="(line, index) in deployStatus"
-                   :key="index"
-                   :class="{
-                     'success-line': line.includes('✅'),
-                     'error-line': line.includes('❌'),
-                     'progress-line': line.includes('-')
-                   }">
-                {{ line }}
-              </div>
+      <el-alert v-if="deployStatus.length > 0"
+                type="info"
+                :closable="false"
+                class="status-alert">
+        <div class="status-scroll-container">
+          <div class="status-text-container">
+            <div v-for="(line, index) in deployStatus"
+                 :key="index"
+                 :class="{
+                   'success-line': line.includes('✅'),
+                   'error-line': line.includes('❌'),
+                   'begin-line': line.includes('...')
+                 }">
+              {{ line }}
             </div>
           </div>
-        </el-alert>
-      </el-form-item>
-    </el-form>
+        </div>
+      </el-alert>
+    </el-form-item>
   </el-card>
 </template>
+
 
 <script>
 import modelQwen from '../assets/model-qwen.jpg'
@@ -118,6 +144,7 @@ export default {
   },
   data() {
     return {
+      activeSections: ['model', 'quant', 'target', 'eval', 'task'],
       selectedModel: '',
       selectedQuantPrecision: 'int4',
       isDeploying: false,
@@ -142,6 +169,10 @@ export default {
         { value: 'int4', label: 'INT4（仅支持）', precisionValue: 4 },
         { value: 'int8', label: 'INT8', precisionValue: 8 }
       ],
+      evalMethods: [
+        { label: 'EvalPlus', value: 'evalPlus' },
+        { label: 'lmEvaluationHarness', value: 'lmEvalHarness' }
+      ],
       evalPlusTasks: [
         { value: 'humaneval', label: 'HumanEval' },
         { value: 'mbpp', label: 'MBPP' }
@@ -158,6 +189,12 @@ export default {
         { value: 'openbookqa', label: 'OpenBookQA' }
       ],
       selectedEvalTasks: [],
+      evalTargets: [
+        { label: '原模型', value: 'origin' },
+        { label: '量化模型', value: 'quant' },
+        { label: '两个都评分', value: 'both' },
+        { label: '不评分', value: 'none' }
+      ],
       apiUrl: 'http://10.20.108.87:7678/api'
     }
   },
@@ -169,7 +206,6 @@ export default {
     },
 
     async startProgressPolling() {
-      // 清除已有轮询
       if (this.progressPollingInterval) {
         clearInterval(this.progressPollingInterval);
       }
@@ -186,7 +222,6 @@ export default {
           });
 
           if (response.data.success) {
-            // 更新进度显示
             if (response.data.progress && response.data.progress.length > 0) {
               const logs = response.data.progress || [];
               this.quantLogs.push(...logs);
@@ -194,7 +229,6 @@ export default {
               failCount = 0;
             }
 
-            // 检查是否有错误（匹配 ERROR 或异常关键词）
             const hasError = response.data.progress.some(p =>
                 p.includes('[ERROR]') ||
                 p.includes('异常') ||
@@ -426,7 +460,7 @@ export default {
             failCount = 0;
             const progressLines = response.data.progress || [];
             this.compileLogs.push(...progressLines);
-            this.$emit('compile-log', progressLines);  // 向父组件分发日志事件
+            this.$emit('compile-log', progressLines);
 
             const hasError = this.compileLogs.some(line =>
                 line.includes('[ERROR]') ||
@@ -493,11 +527,13 @@ export default {
       this.quantLogs = [];
       this.evalLogs = [];
       this.deployLogs = [];
+      this.compileLogs = [];
       this.deployStatus = [];
 
       this.$emit('quant-log', []);
       this.$emit('eval-log', []);
       this.$emit('deploy-log', []);
+      this.$emit('compile-log', []);
 
       this.isDeploying = true;
 
@@ -510,63 +546,44 @@ export default {
           precision: precision.precisionValue
         };
 
-        // 1. 调用API发送部署请求
-        this.deployStatus.push('1. 正在发送部署请求到服务器...');
+        this.deployStatus.push('正在发送部署请求到服务器...');
         await this.sendDeployRequest(requestData);
         this.deployStatus.push('服务器已接收部署请求');
 
         if (this.selectedEvalTarget === 'origin' || this.selectedEvalTarget === 'both') {
-          this.startEvaluation('origin');
+          await this.startEvaluation('origin');
         }
 
-        // 2. 量化处理
-        this.deployStatus.push(`2. 量化中 (${this.getPrecisionName(this.selectedQuantPrecision)})...`);
-        const quantResponse = await this.sendDeployRequest({
-          model_name: model.label,
-          start_quantization: true
-        });
+        await this.startQuantization();
 
-        // 检查量化是否成功启动
-        if (quantResponse.message && quantResponse.message.includes('量化进程已启动')) {
-          this.deployStatus.push('量化开始');
-        } else {
-          throw new Error('量化启动失败');
-        }
+        const checkQuantCompletion = setInterval(() => {
+          const hasFinished = this.deployStatus.some(line => line.includes('✅ 量化完成'));
+          if (hasFinished) {
+            clearInterval(checkQuantCompletion);
 
-        if (quantResponse.success && quantResponse.pid) {
-          this.quantPid = quantResponse.pid;
-          this.deployStatus.push(`2. 量化中 (PID: ${this.quantPid})...`);
-
-          // 开始轮询进度
-          this.startProgressPolling();
-        } else {
-          throw new Error(quantResponse.message || '量化启动失败');
-        }
-
-        const hasFinished = this.deployStatus.some(line => line.includes('✅ 量化完成'));
-
-        if (this.selectedEvalTarget === 'quant' || this.selectedEvalTarget === 'both') {
-          this.deployStatus.push('等待量化完成后对量化模型进行评分...');
-          const checkQuantCompletion = setInterval(() => {
-            if (hasFinished) {
-              clearInterval(checkQuantCompletion);
+            if (this.selectedEvalTarget === 'quant' || this.selectedEvalTarget === 'both') {
               this.startEvaluation('quant');
             }
-          }, 3000);
-        }
 
-        if (hasFinished) {
-          this.startDeployment();
-          this.startCompilation();
-        }
+            this.startDeployment();
+            this.startCompilation();
 
-        // 4. 完成
-        this.deployStatus.push('✅ 部署成功！');
-        this.$emit('deploy-success', {
-          name: model.label,
-          precision: this.getPrecisionName(this.selectedQuantPrecision)
-        });
+            const checkDeployCompletion = setInterval(() => {
+              const isCompileFinished = this.deployStatus.some(line => line.includes('✅ 编译完成'));
+              const isDeployFinished = this.deployStatus.some(line => line.includes('✅ 部署完成'));
 
+              if (isCompileFinished && isDeployFinished) {
+                clearInterval(checkDeployCompletion);
+
+                this.deployStatus.push('✅ 成功！');
+                this.$emit('deploy-success', {
+                  name: model.label,
+                  precision: this.getPrecisionName(this.selectedQuantPrecision)
+                });
+              }
+            }, 3000);
+          }
+        }, 3000);
       } catch (error) {
         console.error('部署失败:', error);
         const errorMsg = error.response?.data?.message || error.message;
@@ -594,6 +611,38 @@ export default {
       }
     },
 
+    async startQuantization() {
+      const model = this.getCurrentModel();
+
+      this.quantLogs = [];
+      this.deployStatus.push(`开始对模型 ${model.label} 进行量化...`);
+
+      try {
+        const response = await axios.post(`${this.apiUrl}`, {
+          model_name: model.label,
+          start_quantization: true
+        }, {
+          headers: {
+            'Authorization': 'Basic ' + btoa(`${this.authInfo.username}:${this.authInfo.password}`)
+          }
+        });
+
+        if (response.data.success) {
+          this.deployStatus.push(`✅ 量化任务已启动`);
+          this.quantPid = response.data.pid;
+
+          this.startProgressPolling();
+        } else {
+          throw new Error(response.data.message || '量化启动失败');
+        }
+      } catch (error) {
+        console.error('量化启动失败', error);
+        const errorMsg = error.response?.data?.message || error.message;
+        this.deployStatus.push(`❌ 量化启动失败: ${errorMsg}`);
+      }
+    },
+
+
     async startEvaluation(target) {
       const model = this.getCurrentModel();
       const method = this.selectedEvalMethod;
@@ -602,11 +651,10 @@ export default {
       this.deployStatus.push(`开始对 ${target === 'origin' ? '原模型' : '量化模型'} 进行评分（方法：${method}）...`);
 
       try {
-        // 修改为正确的API接口和参数格式
         const response = await axios.post(`${this.apiUrl}`, {
           model_name: model.label,
           eval_method: method,
-          eval_tasks: this.selectedEvalTasks, // 新增
+          eval_tasks: this.selectedEvalTasks,
           start_evaluation: true,
           is_quantized: target !== 'origin'
         }, {
@@ -646,7 +694,7 @@ export default {
 
         if (response.data.success) {
           this.deployStatus.push(`✅ 模型 ${model.label} 部署任务已启动 (PID: ${response.data.pid})`);
-          this.startDeploymentPolling();  // 轮询日志或状态
+          this.startDeploymentPolling();
         } else {
           throw new Error(response.data.message || '部署启动失败');
         }
@@ -674,7 +722,7 @@ export default {
 
         if (response.data.success) {
           this.deployStatus.push(`✅ 模型 ${model.label} 编译任务已启动`);
-          this.startCompilationPolling();  // 轮询编译日志
+          this.startCompilationPolling();
         } else {
           throw new Error(response.data.message || '编译启动失败');
         }
@@ -690,14 +738,12 @@ export default {
       try {
         if (!this.isDeploying) return;
 
-        // 1. 停止前端轮询（包括量化进度）
         if (this.progressPollingInterval) {
           clearInterval(this.progressPollingInterval);
         }
 
-        this.deployStatus.push('🔴 正在取消部署流程...');
+        this.deployStatus.push('正在取消部署流程...');
 
-        // 2. 取消量化进程
         try {
           const quantCancelResp = await axios.post(`${this.apiUrl}/cancel_quant`, {}, {
             headers: {
@@ -711,10 +757,9 @@ export default {
             this.deployStatus.push('⚠️ 取消量化失败: ' + quantCancelResp.data.message);
           }
         } catch (e) {
-          this.deployStatus.push('⚠️ 取消量化时发生异常: ' + (e.message || '未知错误'));
+          this.deployStatus.push('⚠️ 取消量化时发生异常: ' + (e.message));
         }
 
-        // 3. 取消评分进程（无论是否启动）
         try {
           const cancelResp = await axios.post(`${this.apiUrl}/cancel_eval`, {}, {
             headers: {
@@ -728,10 +773,9 @@ export default {
             this.deployStatus.push(`⚠️ 无法取消评估: ${cancelResp.data.message}`);
           }
         } catch (error) {
-          this.deployStatus.push(`⚠️ 取消评分失败: ${error.message}`);
+          this.deployStatus.push(`⚠️ 取消评估失败: ${error.message}`);
         }
 
-        // 取消部署
         try {
           const cancelResp = await axios.post(`${this.apiUrl}/cancel_deployment`, {}, {
             headers: {
@@ -748,7 +792,7 @@ export default {
           }
         } catch (error) {
           const errMsg = error?.response?.data?.message || error.message;
-          this.deployStatus.push(`❌ 取消部署失败: ${errMsg}`);
+          this.deployStatus.push(`⚠️ 取消部署失败: ${errMsg}`);
           this.$message.error('取消部署失败');
         }
 
@@ -768,14 +812,13 @@ export default {
           this.deployStatus.push(`⚠️ 取消编译失败: ${error.message}`);
         }
 
-        // 4. 状态重置
         this.isDeploying = false;
         this.$message.warning('部署流程和评分流程已中断');
 
       } catch (error) {
         console.error('取消部署失败:', error);
         const errorMsg = error.response?.data?.message || error.message;
-        this.deployStatus.push(`❌ 取消失败: ${errorMsg}`);
+        this.deployStatus.push(`⚠️ 取消失败: ${errorMsg}`);
         this.$message.error(`取消失败: ${errorMsg}`);
       } finally {
         this.isDeploying = false;
@@ -837,11 +880,11 @@ export default {
 
   watch: {
     selectedEvalMethod() {
-      this.selectedEvalTasks = []; // 切换评估框架时清空已选任务
+      this.selectedEvalTasks = [];
     },
     selectedEvalTarget(newVal) {
       if (newVal === 'none') {
-        this.selectedEvalTasks = []; // 选择"不评分"时清空已选任务
+        this.selectedEvalTasks = [];
       }
     }
   },
@@ -862,7 +905,7 @@ export default {
 
 .deployment-tool-card {
   width: 100%;
-  min-height: 700px; /* 增加最小高度 */
+  min-height: 700px;
   border-radius: 12px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
 }
@@ -870,11 +913,11 @@ export default {
 .header-with-icon {
   display: flex;
   align-items: center;
-  justify-content: center; /* 添加水平居中 */
+  justify-content: center;
   font-size: 20px;
   font-weight: bold;
-  width: 100%; /* 确保宽度填满 */
-  text-align: center; /* 作为备用方案 */
+  width: 100%;
+  text-align: center;
 }
 
 .header-icon {
@@ -915,22 +958,20 @@ export default {
   color: #333;
 }
 
-/* 修改后的样式 */
 .deploy-section {
   margin-top: 20px;
   display: flex;
   flex-direction: column;
-  align-items: center; /* 使子元素水平居中 */
+  align-items: center;
 }
 
 .deploy-button-wrapper {
-  width: 100%; /* 确保容器宽度足够 */
+  width: 100%;
   display: flex;
   justify-content: center;
   margin-bottom: 20px;
 }
 
-/* 修复 el-form-item 的默认样式影响 */
 .el-form-item__content {
   display: flex;
   flex-direction: column;
@@ -958,7 +999,7 @@ export default {
 }
 
 .status-text-container {
-  width: 760px;
+  width: 600px;
   overflow-x: auto;
   overflow-y: hidden;
   padding: 10px;
@@ -977,7 +1018,7 @@ export default {
   font-weight: bold;
 }
 
-.progress-line {
+.begin-line {
   color: #409EFF;
 }
 </style>
