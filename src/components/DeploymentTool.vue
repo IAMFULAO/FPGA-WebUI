@@ -571,9 +571,16 @@ export default {
             this.startCompilation();
 
             const checkAllDone = setInterval(() => {
-              const evalDone = this.deployStatus.some(line => line.includes('✅ 评估完成'));
-              const compileDone = this.deployStatus.some(line => line.includes('✅ 编译完成'));
-              const deployDone = this.deployStatus.some(line => line.includes('✅ 部署完成'));
+              let evalDone = false;
+              if (this.selectedEvalTarget === 'quant' || this.selectedEvalTarget === 'both') {
+                evalDone = this.deployStatus.some(line => line.includes('量化模型 评估完成'));
+              } else if (this.selectedEvalTarget === 'origin') {
+                evalDone = this.deployStatus.some(line => line.includes('原模型 评估完成'));
+              } else {
+                evalDone = 1;
+              }
+              const compileDone = this.deployStatus.some(line => line.includes('编译完成'));
+              const deployDone = this.deployStatus.some(line => line.includes('部署完成'));
 
               if (compileDone && deployDone && evalDone) {
                 clearInterval(checkAllDone);
