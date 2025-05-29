@@ -1,7 +1,7 @@
 <template>
   <el-card>
     <div slot="header" class="header-with-icon">
-      <img src="../assets/header-icon.jpg" class="header-icon">
+      <img src="@/assets/header-icon.jpg" class="header-icon">
       <span>大模型 FPGA 部署工具</span>
     </div>
 
@@ -130,8 +130,8 @@
 
 
 <script>
-import modelQwen from '../assets/model-qwen.jpg'
-import modelDeepseek from '../assets/model-deepseek.jpg'
+import modelQwen from '@/assets/model-qwen.jpg'
+import modelDeepseek from '@/assets/model-deepseek.jpg'
 import axios from 'axios';
 
 export default {
@@ -474,7 +474,7 @@ export default {
                 line.toLowerCase().includes('compile finished') ||
                 line.toLowerCase().includes('compilation complete') ||
                 line.toLowerCase().includes('done') ||
-                line.include('triggered') ||
+                line.includes('triggered') ||
                 line.toLowerCase().includes('triggered')
             );
 
@@ -570,14 +570,16 @@ export default {
             this.startDeployment();
             this.startCompilation();
 
-            const checkDeployCompletion = setInterval(() => {
-              const isCompileFinished = this.deployStatus.some(line => line.includes('✅ 编译完成'));
-              const isDeployFinished = this.deployStatus.some(line => line.includes('✅ 部署完成'));
+            const checkAllDone = setInterval(() => {
+              const evalDone = this.deployStatus.some(line => line.includes('✅ 评估完成'));
+              const compileDone = this.deployStatus.some(line => line.includes('✅ 编译完成'));
+              const deployDone = this.deployStatus.some(line => line.includes('✅ 部署完成'));
 
-              if (isCompileFinished && isDeployFinished) {
-                clearInterval(checkDeployCompletion);
+              if (compileDone && deployDone && evalDone) {
+                clearInterval(checkAllDone);
 
                 this.deployStatus.push('✅ 成功！');
+                this.isDeploying = false;
                 this.$emit('deploy-success', {
                   name: model.label,
                   precision: this.getPrecisionName(this.selectedQuantPrecision)
@@ -695,7 +697,7 @@ export default {
         });
 
         if (response.data.success) {
-          this.deployStatus.push(`✅ 模型 ${model.label} 部署任务已启动 (PID: ${response.data.pid})`);
+          this.deployStatus.push(`✅ 模型 ${model.label} 部署任务已启动`);
           this.startDeploymentPolling();
         } else {
           throw new Error(response.data.message || '部署启动失败');

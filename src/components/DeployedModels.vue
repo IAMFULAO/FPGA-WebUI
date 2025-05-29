@@ -1,7 +1,7 @@
 <template>
   <el-card class="deployment-tool-card">
     <div slot="header" class="header-with-icon">
-      <img src="../assets/header-icon.jpg" class="header-icon">
+      <img src="@/assets/header-icon.jpg" class="header-icon">
       <span>部署模型管理</span>
     </div>
 
@@ -58,8 +58,8 @@
 </template>
 
 <script>
-import modelQwen from '../assets/model-qwen.jpg';
-import modelDeepseek from '../assets/model-deepseek.jpg';
+import modelQwen from '@/assets/model-qwen.jpg';
+import modelDeepseek from '@/assets/model-deepseek.jpg';
 
 export default {
   name: "DeployedModels",
