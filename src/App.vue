@@ -11,7 +11,6 @@
             @eval-log="handleEvalLog"
             @deploy-log="handleDeployLog"
             @compile-log="handleCompileLog"
-            :deployed-models="deployedModels"
             :auth-info="authInfo" />
         </div>
 
@@ -25,8 +24,6 @@
 
       <div class="bottom-section">
         <DeployedModels
-            :models="deployedModels"
-            @remove="removeModel"
             :auth-info="authInfo" />
       </div>
     </div>
@@ -57,7 +54,6 @@ export default {
     return {
       isLoggedIn: false,
       authInfo: {},
-      deployedModels: [],
       quantLogs: [],
       evalLogs: [],
       deployLogs: [],
@@ -135,30 +131,12 @@ export default {
         this.handleEvalLog([]);
         this.handleDeployLog([]);
         this.handleCompileLog([]);
-
-        this.deployedModels.push({
-          name: modelData.name,
-          precision: modelData.precision,
-          time: new Date().toLocaleString()
-        })
       } catch (err) {
         this.$reportError(err, {
           action: 'handle_deploy_success',
           modelData: JSON.stringify(modelData)
         })
         this.$message.error('部署记录保存失败')
-      }
-    },
-    removeModel(index) {
-      try {
-        this.deployedModels.splice(index, 1)
-        this.$message.success('模型已移除')
-      } catch (err) {
-        this.$reportError(err, {
-          action: 'remove_model',
-          index: index
-        })
-        this.$message.error('模型移除失败')
       }
     },
     globalErrorHandler(err, vm, info) {
@@ -250,10 +228,8 @@ html, body {
 
 .bottom-section {
   display: flex;
-  gap: 20px;
-  flex-wrap: wrap;
   justify-content: center;
-  width: 100%;
+  align-items: center;
   margin-top: 40px;
 }
 </style>

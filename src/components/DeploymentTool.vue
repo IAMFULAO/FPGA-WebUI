@@ -38,10 +38,10 @@
       </el-collapse-item>
 
 
-      <!-- 评分方法 -->
-      <el-collapse-item title="选择评分方法" name="eval" v-if="selectedEvalTarget !== 'none'">
+      <!-- 评分框架 -->
+      <el-collapse-item title="选择评分框架" name="eval" v-if="selectedEvalTarget !== 'none'">
         <el-form-item>
-          <el-select v-model="selectedEvalMethod" placeholder="请选择评分方法">
+          <el-select v-model="selectedEvalMethod" placeholder="请选择评分框架">
             <el-option
                 v-for="method in evalMethods"
                 :key="method.value"
@@ -53,14 +53,14 @@
         </el-form-item>
       </el-collapse-item>
 
-      <!-- 评估任务 -->
-      <el-collapse-item title="选择评估任务" name="task" v-if="selectedEvalMethod && selectedEvalTarget !== 'none'">
+      <!-- 评分任务 -->
+      <el-collapse-item title="选择评分任务" name="task" v-if="selectedEvalMethod && selectedEvalTarget !== 'none'">
         <el-form-item>
           <el-select
               v-model="selectedEvalTasks"
               multiple
               filterable
-              placeholder="请选择评估任务"
+              placeholder="请选择评分任务"
               :collapse-tags="false"
               :clearable="true"
               style="width: 100%;">
@@ -473,7 +473,9 @@ export default {
                 line.includes('完成') ||
                 line.toLowerCase().includes('compile finished') ||
                 line.toLowerCase().includes('compilation complete') ||
-                line.toLowerCase().includes('done')
+                line.toLowerCase().includes('done') ||
+                line.include('triggered') ||
+                line.toLowerCase().includes('triggered')
             );
 
             if (hasError) {
@@ -768,12 +770,12 @@ export default {
           });
 
           if (cancelResp.data.success) {
-            this.deployStatus.push(`✅ 已取消评估进程`);
+            this.deployStatus.push(`✅ 已取消评分进程`);
           } else {
-            this.deployStatus.push(`⚠️ 无法取消评估: ${cancelResp.data.message}`);
+            this.deployStatus.push(`⚠️ 无法取消评分: ${cancelResp.data.message}`);
           }
         } catch (error) {
-          this.deployStatus.push(`⚠️ 取消评估失败: ${error.message}`);
+          this.deployStatus.push(`⚠️ 取消评分失败: ${error.message}`);
         }
 
         try {
